@@ -1249,9 +1249,6 @@ pub struct UpdateIssue<'a> {
     uploads: Option<Vec<UploadedAttachment<'a>>>,
 }
 
-impl ReturnsJsonResponse for UpdateIssue<'_> {}
-impl NoPagination for UpdateIssue<'_> {}
-
 impl<'a> UpdateIssue<'a> {
     /// Create a builder for the endpoint.
     #[must_use]
