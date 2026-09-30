@@ -1502,6 +1502,9 @@ impl<'a> QueryParams<'a> {
 
     /// Add the parameters to a URL.
     pub fn add_to_url(&self, url: &mut Url) {
+        if self.params.is_empty() {
+            return;
+        }
         let mut pairs = url.query_pairs_mut();
         pairs.extend_pairs(self.params.iter());
     }
