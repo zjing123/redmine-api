@@ -60,6 +60,33 @@ use std::borrow::Cow;
 use reqwest::Url;
 use tracing::{debug, error, trace};
 
+/// Authentication methods supported by Redmine.
+#[derive(Clone)]
+pub enum Authentication {
+    /// Authenticate with a Redmine API key.
+    ApiKey(String),
+    /// Authenticate with an HTTP Basic Auth username and password.
+    Basic {
+        /// The Redmine login name.
+        username: String,
+        /// The Redmine login password.
+        password: String,
+    },
+}
+
+impl std::fmt::Debug for Authentication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ApiKey(_) => f.write_str("ApiKey(REDACTED)"),
+            Self::Basic { username, .. } => f
+                .debug_struct("Basic")
+                .field("username", username)
+                .field("password", &"REDACTED")
+                .finish(),
+        }
+    }
+}
+
 /// main API client object (sync)
 #[derive(derive_more::Debug)]
 #[expect(
@@ -71,9 +98,8 @@ pub struct Redmine {
     client: reqwest::blocking::Client,
     /// the redmine base url
     redmine_url: Url,
-    /// a redmine API key, usually 40 hex digits where the letters (a-f) are lower case
-    #[debug(skip)]
-    api_key: String,
+    /// The configured authentication method.
+    authentication: Authentication,
     /// the user id we want to impersonate, only works if the API key we use has admin privileges
     impersonate_user_id: Option<u64>,
 }
@@ -85,9 +111,8 @@ pub struct RedmineAsync {
     client: reqwest::Client,
     /// the redmine base url
     redmine_url: Url,
-    /// a redmine API key, usually 40 hex digits where the letters (a-f) are lower case
-    #[debug(skip)]
-    api_key: String,
+    /// The configured authentication method.
+    authentication: Authentication,
     /// the user id we want to impersonate, only works if the API key we use has admin privileges
     impersonate_user_id: Option<u64>,
 }
@@ -138,10 +163,27 @@ impl Redmine {
         redmine_url: url::Url,
         api_key: &str,
     ) -> Result<Self, crate::Error> {
+        Self::with_authentication(
+            client,
+            redmine_url,
+            Authentication::ApiKey(api_key.to_owned()),
+        )
+    }
+
+    /// Create a [Redmine] object with an explicit authentication method.
+    ///
+    /// # Errors
+    ///
+    /// This returns an error only when the client configuration cannot be initialized.
+    pub const fn with_authentication(
+        client: reqwest::blocking::Client,
+        redmine_url: url::Url,
+        authentication: Authentication,
+    ) -> Result<Self, crate::Error> {
         Ok(Self {
             client,
             redmine_url,
-            api_key: api_key.to_string(),
+            authentication,
             impersonate_user_id: None,
         })
     }
@@ -206,15 +248,19 @@ impl Redmine {
         let Self {
             client,
             redmine_url,
-            api_key,
+            authentication,
             impersonate_user_id,
         } = self;
         let mut url = redmine_url.join(endpoint)?;
         parameters.add_to_url(&mut url);
         debug!(%url, %method, "Calling redmine");
-        let req = client
-            .request(method.clone(), url.clone())
-            .header("x-redmine-api-key", api_key);
+        let req = client.request(method.clone(), url.clone());
+        let req = match authentication {
+            Authentication::ApiKey(api_key) => req.header("x-redmine-api-key", api_key),
+            Authentication::Basic { username, password } => {
+                req.basic_auth(username, Some(password))
+            }
+        };
         let req = if let Some(user_id) = impersonate_user_id {
             req.header("X-Redmine-Switch-User", format!("{user_id}"))
         } else {
@@ -485,10 +531,27 @@ impl RedmineAsync {
         redmine_url: url::Url,
         api_key: &str,
     ) -> Result<std::sync::Arc<Self>, crate::Error> {
+        Self::with_authentication(
+            client,
+            redmine_url,
+            Authentication::ApiKey(api_key.to_owned()),
+        )
+    }
+
+    /// Create an async [RedmineAsync] object with an explicit authentication method.
+    ///
+    /// # Errors
+    ///
+    /// This returns an error only when the client configuration cannot be initialized.
+    pub fn with_authentication(
+        client: reqwest::Client,
+        redmine_url: url::Url,
+        authentication: Authentication,
+    ) -> Result<std::sync::Arc<Self>, crate::Error> {
         Ok(std::sync::Arc::new(Self {
             client,
             redmine_url,
-            api_key: api_key.to_string(),
+            authentication,
             impersonate_user_id: None,
         }))
     }
@@ -553,15 +616,19 @@ impl RedmineAsync {
         let Self {
             client,
             redmine_url,
-            api_key,
+            authentication,
             impersonate_user_id,
         } = self.as_ref();
         let mut url = redmine_url.join(endpoint)?;
         parameters.add_to_url(&mut url);
         debug!(%url, %method, "Calling redmine");
-        let req = client
-            .request(method.clone(), url.clone())
-            .header("x-redmine-api-key", api_key);
+        let req = client.request(method.clone(), url.clone());
+        let req = match authentication {
+            Authentication::ApiKey(api_key) => req.header("x-redmine-api-key", api_key),
+            Authentication::Basic { username, password } => {
+                req.basic_auth(username, Some(password))
+            }
+        };
         let req = if let Some(user_id) = impersonate_user_id {
             req.header("X-Redmine-Switch-User", format!("{user_id}"))
         } else {
