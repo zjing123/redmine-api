@@ -11,7 +11,7 @@ use reqwest::Method;
 use std::borrow::Cow;
 
 use crate::api::users::UserEssentials;
-use crate::api::{Endpoint, NoPagination, ReturnsJsonResponse};
+use crate::api::{Endpoint, NoPagination, QueryParams, Redmine, ReturnsJsonResponse};
 
 /// a type for attachment to use as an API return type
 ///
@@ -48,6 +48,19 @@ pub struct Attachment {
     /// An integer representing the download count.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub downloads: Option<u64>,
+}
+
+impl Redmine {
+    /// Download the binary content of an attachment using its content URL.
+    pub fn download_attachment(&self, attachment: &Attachment) -> Result<Vec<u8>, crate::Error> {
+        let (_, body) = self.rest(
+            reqwest::Method::GET,
+            &attachment.content_url,
+            QueryParams::default(),
+            None,
+        )?;
+        Ok(body.to_vec())
+    }
 }
 
 /// The endpoint for a specific Redmine attachment
